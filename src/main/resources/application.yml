@@ -1,0 +1,38 @@
+spring:
+  application:
+    name: course-registration
+
+  # 로컬 기본값. 컨테이너 실행 시 application-docker.yml로 오버라이드
+  datasource:
+    url: jdbc:postgresql://localhost:5432/course_registration
+    username: course
+    password: course
+    hikari:
+      maximum-pool-size: 10
+      connection-timeout: 3000
+
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+    properties:
+      hibernate:
+        format_sql: true
+
+  data:
+    redis:
+      host: localhost
+      port: 6379
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: always
+
+logging:
+  level:
+    com.liveclass: DEBUG

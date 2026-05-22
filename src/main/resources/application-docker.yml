@@ -1,0 +1,7 @@
+# 컨테이너 실행용 오버라이드 — 호스트명을 compose 서비스명으로
+spring:
+  datasource:
+    url: jdbc:postgresql://postgres:5432/course_registration
+  data:
+    redis:
+      host: redis
