@@ -1,5 +1,6 @@
 package com.liveclass.registration.domain;
 
+import com.liveclass.registration.global.exception.InvalidStatusTransitionException;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -88,6 +89,22 @@ public class CourseClass {
         this.startDate = startDate;
         this.endDate = endDate;
         this.status = ClassStatus.DRAFT;
+    }
+
+    /** DRAFT에서만 OPEN으로 전이. 그 외 상태에서 호출되면 예외. */
+    public void open() {
+        if (this.status != ClassStatus.DRAFT) {
+            throw new InvalidStatusTransitionException(this.id, this.status, ClassStatus.OPEN);
+        }
+        this.status = ClassStatus.OPEN;
+    }
+
+    /** OPEN에서만 CLOSED로 전이. 그 외 상태에서 호출되면 예외. */
+    public void close() {
+        if (this.status != ClassStatus.OPEN) {
+            throw new InvalidStatusTransitionException(this.id, this.status, ClassStatus.CLOSED);
+        }
+        this.status = ClassStatus.CLOSED;
     }
 
     @Override
