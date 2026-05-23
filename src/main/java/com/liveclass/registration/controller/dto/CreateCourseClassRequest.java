@@ -38,7 +38,7 @@ public record CreateCourseClassRequest(
 
     // jakarta validation으로 표현 불가한 cross-field 검증.
     // Hibernate Validator가 is-prefix boolean 메서드를 자동 호출한다.
-    @AssertTrue(message = "endDate는 startDate 이후여야 합니다")
+    @AssertTrue(message = "endDate는 startDate 이상이어야 합니다")
     public boolean isDateOrderValid() {
         if (startDate == null || endDate == null) {
             return true;
