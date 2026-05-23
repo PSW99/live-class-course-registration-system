@@ -11,6 +11,13 @@ spring:
       maximum-pool-size: 10
       connection-timeout: 3000
 
+  # PostgreSQL은 기본이 embedded 모드라 always 명시
+  sql:
+    init:
+      mode: always
+      platform: postgresql
+      continue-on-error: false
+
   jpa:
     hibernate:
       ddl-auto: validate
@@ -18,6 +25,7 @@ spring:
     properties:
       hibernate:
         format_sql: true
+        jdbc.time_zone: UTC
 
   data:
     redis:
