@@ -1,4 +1,4 @@
-package com.liveclass.registration.controller;
+package com.liveclass.registration.integration;
 
 import static org.hamcrest.Matchers.containsString;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;

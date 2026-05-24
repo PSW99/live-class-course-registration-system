@@ -1,4 +1,4 @@
-package com.liveclass.registration.controller;
+package com.liveclass.registration.concurrency;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
