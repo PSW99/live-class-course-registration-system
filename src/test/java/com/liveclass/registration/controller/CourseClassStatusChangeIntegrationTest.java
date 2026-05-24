@@ -13,6 +13,7 @@ import com.liveclass.registration.domain.User;
 import com.liveclass.registration.repository.CourseClassRepository;
 import com.liveclass.registration.repository.UserRepository;
 import com.liveclass.registration.service.CourseClassService;
+import com.liveclass.registration.support.MockRedissonClientConfig;
 import com.liveclass.registration.support.PostgresContainerSupport;
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -25,6 +26,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabase;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
@@ -37,6 +39,7 @@ import org.springframework.test.web.servlet.MockMvc;
 )
 @AutoConfigureMockMvc
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
+@Import(MockRedissonClientConfig.class)
 @DisplayName("PATCH /api/classes/{id}/status — 강의 상태 전이 통합 테스트")
 class CourseClassStatusChangeIntegrationTest extends PostgresContainerSupport {
 
