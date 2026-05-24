@@ -1,8 +1,13 @@
-package com.liveclass.registration.domain;
+package com.liveclass.registration.integration;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.liveclass.registration.domain.ClassStatus;
+import com.liveclass.registration.domain.CourseClass;
+import com.liveclass.registration.domain.Enrollment;
+import com.liveclass.registration.domain.EnrollmentStatus;
+import com.liveclass.registration.domain.User;
 import com.liveclass.registration.repository.CourseClassRepository;
 import com.liveclass.registration.repository.EnrollmentRepository;
 import com.liveclass.registration.repository.UserRepository;

@@ -1,5 +1,6 @@
 package com.liveclass.registration.domain;
 
+import com.liveclass.registration.global.exception.CapacityExceededException;
 import com.liveclass.registration.global.exception.InvalidStatusTransitionException;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -105,6 +106,20 @@ public class CourseClass {
             throw new InvalidStatusTransitionException(this.id, this.status, ClassStatus.CLOSED);
         }
         this.status = ClassStatus.CLOSED;
+    }
+
+    /**
+     * 활성 신청 수를 1 증가시킨다.
+     *
+     * capacity에 도달한 상태에서 호출되면 {@link CapacityExceededException}을 던진다.
+     * 호출자는 비관적 락이 잡힌 row 위에서만 이 메서드를 호출해야 한다 —
+     * 그래야 read-modify-write가 원자적이다.
+     */
+    public void incrementCurrentCount() {
+        if (this.currentCount >= this.capacity) {
+            throw new CapacityExceededException(this.id, this.capacity);
+        }
+        this.currentCount = this.currentCount + 1;
     }
 
     @Override

@@ -1,8 +1,11 @@
-package com.liveclass.registration.domain;
+package com.liveclass.registration.unit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.liveclass.registration.domain.ClassStatus;
+import com.liveclass.registration.domain.CourseClass;
+import com.liveclass.registration.domain.User;
 import com.liveclass.registration.global.exception.InvalidStatusTransitionException;
 import java.math.BigDecimal;
 import java.time.LocalDate;
