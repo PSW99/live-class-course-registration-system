@@ -6,6 +6,7 @@ import com.liveclass.registration.domain.Enrollment;
 import com.liveclass.registration.domain.User;
 import com.liveclass.registration.global.exception.ClassNotOpenException;
 import com.liveclass.registration.global.exception.DuplicateEnrollmentException;
+import com.liveclass.registration.global.exception.ForbiddenAccessException;
 import com.liveclass.registration.global.exception.NotFoundException;
 import com.liveclass.registration.global.exception.SelfEnrollmentForbiddenException;
 import com.liveclass.registration.repository.CourseClassRepository;
@@ -47,7 +48,6 @@ public class EnrollmentService {
         if (cls.getStatus() != ClassStatus.OPEN) {
             throw new ClassNotOpenException(cls.getId(), cls.getStatus());
         }
-        // LAZY proxy의 getId()는 초기화 없이 식별자만 꺼낸다 — Long.equals로 primitive 비교 함정도 회피
         if (cls.getCreator().getId().equals(userId)) {
             throw new SelfEnrollmentForbiddenException(userId, classId);
         }
@@ -66,6 +66,29 @@ public class EnrollmentService {
             return enrollmentRepository.saveAndFlush(enrollment);
         } catch (DataIntegrityViolationException e) {
             throw new DuplicateEnrollmentException(userId, classId, e);
+        }
+    }
+
+    /**
+     * 결제 확정. PENDING enrollment를 CONFIRMED로 단방향 전이한다.
+     *
+     * 검증 순서는 404 → 403 → 400 고정. 상태 전이 가드는 도메인 메서드가 담당한다.
+     *
+     * 본 시스템은 자기 자신의 enrollment row 하나만 수정하므로 분산락·비관적 락이 필요 없다.
+     * 같은 enrollment에 대한 동시 confirm은 본인 더블 탭뿐이며 last-write-wins로 사용자 영향이 없다.
+     */
+    @Transactional
+    public Enrollment confirm(long enrollmentId, long requesterId) {
+        Enrollment enrollment = enrollmentRepository.findById(enrollmentId)
+                .orElseThrow(() -> new NotFoundException("enrollment", enrollmentId));
+        assertOwner(enrollment, requesterId);
+        enrollment.confirm();
+        return enrollment;
+    }
+
+    private void assertOwner(Enrollment enrollment, long requesterId) {
+        if (!enrollment.getUser().getId().equals(requesterId)) {
+            throw new ForbiddenAccessException("enrollment", enrollment.getId(), requesterId);
         }
     }
 }
