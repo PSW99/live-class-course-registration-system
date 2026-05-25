@@ -10,6 +10,8 @@ import com.liveclass.registration.global.exception.NotFoundException;
 import com.liveclass.registration.repository.CourseClassRepository;
 import com.liveclass.registration.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -61,6 +63,26 @@ public class CourseClassService {
             case DRAFT -> throw new InvalidStatusTransitionException(cls.getId(), cls.getStatus(), nextStatus);
         }
         return cls;
+    }
+
+    /**
+     * 강의 페이지 조회. {@code status}가 null이면 전체, 아니면 해당 상태만 필터.
+     *
+     * 트랜잭션 안에서 {@code Page<CourseClass>}를 반환하고 컨트롤러의 매퍼가 DTO로 변환한다.
+     * 매퍼는 LAZY proxy의 id만 접근하므로 트랜잭션 밖 직렬화도 안전하다.
+     */
+    @Transactional(readOnly = true)
+    public Page<CourseClass> list(ClassStatus status, Pageable pageable) {
+        return (status == null)
+                ? courseClassRepository.findAll(pageable)
+                : courseClassRepository.findByStatus(status, pageable);
+    }
+
+    /** 강의 단건 조회. 존재하지 않으면 {@link NotFoundException} (404). */
+    @Transactional(readOnly = true)
+    public CourseClass detail(long classId) {
+        return courseClassRepository.findById(classId)
+                .orElseThrow(() -> new NotFoundException("class", classId));
     }
 
     private void assertOwner(CourseClass cls, long requesterId) {
