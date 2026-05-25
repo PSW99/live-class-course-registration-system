@@ -21,6 +21,8 @@ import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -148,6 +150,17 @@ public class EnrollmentService {
         enrollment.cancel(now);
         cls.decrementCurrentCount();
         return enrollment;
+    }
+
+    /**
+     * 특정 사용자의 enrollment 페이지 조회. 정렬은 {@code created_at DESC} 고정.
+     *
+     * 사용자 존재 여부 검증은 수행하지 않는다 — user_id를 키로 enrollment를 조회만 하며,
+     * 존재하지 않는 사용자에 대해서는 빈 페이지를 반환한다(enumeration 노출 회피 측면에서도 적절).
+     */
+    @Transactional(readOnly = true)
+    public Page<Enrollment> listByUser(long userId, Pageable pageable) {
+        return enrollmentRepository.findByUserIdOrderByCreatedAtDesc(userId, pageable);
     }
 
     private void assertOwner(Enrollment enrollment, long requesterId) {

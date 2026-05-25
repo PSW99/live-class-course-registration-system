@@ -2,12 +2,17 @@ package com.liveclass.registration.controller;
 
 import com.liveclass.registration.controller.dto.CreateEnrollmentRequest;
 import com.liveclass.registration.controller.dto.EnrollmentResponse;
+import com.liveclass.registration.controller.dto.PageQuery;
+import com.liveclass.registration.controller.dto.PagedResponse;
 import com.liveclass.registration.domain.Enrollment;
 import com.liveclass.registration.service.EnrollmentLockFacade;
 import com.liveclass.registration.service.EnrollmentService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
 import org.springframework.http.HttpStatus;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -70,5 +75,19 @@ public class EnrollmentController {
     ) {
         Enrollment enrollment = enrollmentService.cancel(enrollmentId, requesterId);
         return EnrollmentResponse.from(enrollment);
+    }
+
+    /**
+     * 본인 신청 목록. {@code X-User-Id}가 가리키는 사용자의 enrollment를 {@code created_at DESC}로 페이지 반환.
+     *
+     * 사용자 존재 검증은 수행하지 않으며 존재하지 않으면 빈 페이지로 응답한다.
+     */
+    @GetMapping("/me")
+    public PagedResponse<EnrollmentResponse> listMine(
+            @RequestHeader("X-User-Id") long requesterId,
+            @Valid @ModelAttribute PageQuery query
+    ) {
+        Page<Enrollment> page = enrollmentService.listByUser(requesterId, query.toPageable());
+        return PagedResponse.of(page, EnrollmentResponse::from);
     }
 }
