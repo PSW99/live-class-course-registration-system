@@ -56,4 +56,19 @@ public class EnrollmentController {
         Enrollment enrollment = enrollmentService.confirm(enrollmentId, requesterId);
         return EnrollmentResponse.from(enrollment);
     }
+
+    /**
+     * 수강 취소. PENDING/CONFIRMED enrollment를 CANCELLED로 전이하고 정원을 즉시 반환한다.
+     *
+     * 강의 row의 비관적 락은 서비스가 잡지만 cross-row 분산락은 불필요 —
+     * 본인 본인 enrollment 취소는 enroll만큼의 high-contention이 발생하지 않는다.
+     */
+    @PostMapping("/{id}/cancel")
+    public EnrollmentResponse cancel(
+            @PathVariable("id") long enrollmentId,
+            @RequestHeader("X-User-Id") long requesterId
+    ) {
+        Enrollment enrollment = enrollmentService.cancel(enrollmentId, requesterId);
+        return EnrollmentResponse.from(enrollment);
+    }
 }

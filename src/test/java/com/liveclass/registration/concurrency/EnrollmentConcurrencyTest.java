@@ -4,11 +4,13 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.liveclass.registration.domain.ClassStatus;
 import com.liveclass.registration.domain.CourseClass;
+import com.liveclass.registration.domain.Enrollment;
 import com.liveclass.registration.domain.User;
 import com.liveclass.registration.repository.CourseClassRepository;
 import com.liveclass.registration.repository.EnrollmentRepository;
 import com.liveclass.registration.repository.UserRepository;
 import com.liveclass.registration.service.EnrollmentLockFacade;
+import com.liveclass.registration.service.EnrollmentService;
 import com.liveclass.registration.support.PostgresRedisContainerSupport;
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -36,6 +38,9 @@ class EnrollmentConcurrencyTest extends PostgresRedisContainerSupport {
 
     @Autowired
     EnrollmentLockFacade enrollmentLockFacade;
+
+    @Autowired
+    EnrollmentService enrollmentService;
 
     @Autowired
     CourseClassRepository courseClassRepository;
@@ -156,6 +161,62 @@ class EnrollmentConcurrencyTest extends PostgresRedisContainerSupport {
         assertThat(currentCount).isEqualTo(1L);
         assertThat(status).isEqualTo("CLOSED");
         assertThat(activeEnrollmentCount(classId)).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("동일 enrollment에 10건의 동시 cancel 요청이 와도 정확히 1건만 성공하고 정원은 정확히 1만 감소한다")
+    void sameEnrollment_with10ConcurrentCancels_decrementsCountExactlyOnce() throws InterruptedException {
+        // currentCount > 1이어야 stale-state 이중 감소 버그가 드러난다. count=1로 시작하면
+        // decrementCurrentCount()의 'count<=0' 가드가 두 번째 cancel을 가로채 버그가 가려진다.
+        long creatorId = createUser("creator-cancel-race@example.com");
+        long classId = createOpenClass(creatorId, 10);
+        long targetLearnerId = createUser("cancel-race-target@example.com");
+        List<Long> filler = createUsers(3, "cancel-race-filler");
+
+        Enrollment enrolled = enrollmentLockFacade.enroll(targetLearnerId, classId);
+        long enrollmentId = enrolled.getId();
+        for (Long fillerId : filler) {
+            enrollmentLockFacade.enroll(fillerId, classId);
+        }
+        long countBefore = jdbcTemplate.queryForObject(
+                "SELECT current_count FROM classes WHERE id = ?", Long.class, classId);
+        assertThat(countBefore).isEqualTo(4L);
+
+        int threads = 10;
+        ExecutorService pool = Executors.newFixedThreadPool(threads);
+        CountDownLatch ready = new CountDownLatch(threads);
+        CountDownLatch start = new CountDownLatch(1);
+        CountDownLatch done = new CountDownLatch(threads);
+        AtomicInteger success = new AtomicInteger();
+        AtomicInteger failure = new AtomicInteger();
+
+        for (int i = 0; i < threads; i++) {
+            pool.submit(() -> {
+                ready.countDown();
+                try {
+                    start.await();
+                    enrollmentService.cancel(enrollmentId, targetLearnerId);
+                    success.incrementAndGet();
+                } catch (Exception e) {
+                    failure.incrementAndGet();
+                } finally {
+                    done.countDown();
+                }
+            });
+        }
+        ready.await();
+        start.countDown();
+        boolean completed = done.await(30, TimeUnit.SECONDS);
+        pool.shutdown();
+        pool.awaitTermination(10, TimeUnit.SECONDS);
+        assertThat(completed).as("모든 스레드가 30초 안에 종료되어야 한다").isTrue();
+
+        assertThat(success.get()).isEqualTo(1);
+        assertThat(failure.get()).isEqualTo(threads - 1);
+        long currentCount = jdbcTemplate.queryForObject(
+                "SELECT current_count FROM classes WHERE id = ?", Long.class, classId);
+        assertThat(currentCount).isEqualTo(3L);
+        assertThat(activeEnrollmentCount(classId)).isEqualTo(3);
     }
 
     private ConcurrencyResult runConcurrentEnroll(List<Long> learnerIds, long classId) throws InterruptedException {
