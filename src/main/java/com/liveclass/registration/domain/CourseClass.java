@@ -122,6 +122,24 @@ public class CourseClass {
         this.currentCount = this.currentCount + 1;
     }
 
+    /**
+     * 활성 신청 수를 1 감소시킨다.
+     *
+     * 호출자는 비관적 락이 잡힌 row 위에서만 이 메서드를 호출해야 한다 —
+     * 그래야 read-modify-write가 원자적이다.
+     *
+     * {@code currentCount}가 0 이하인 상태에서 호출되면 {@link IllegalStateException}.
+     * 이는 사용자 입력으로 도달할 수 없는 시스템 정합성 깨짐 신호이며, 도메인 예외가
+     * 아니라 500 응답으로 노출되어 운영 알람을 띄워야 한다.
+     */
+    public void decrementCurrentCount() {
+        if (this.currentCount <= 0) {
+            throw new IllegalStateException(
+                    "class %d: current_count가 0인 상태에서 감소 요청 — 정합성 깨짐".formatted(this.id));
+        }
+        this.currentCount = this.currentCount - 1;
+    }
+
     @Override
     public boolean equals(Object o) {
         if (this == o) return true;

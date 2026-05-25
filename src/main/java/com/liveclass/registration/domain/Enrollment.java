@@ -79,6 +79,25 @@ public class Enrollment {
         this.confirmedAt = OffsetDateTime.now(ZoneOffset.UTC);
     }
 
+    /**
+     * PENDING 또는 CONFIRMED → CANCELLED로 전이한다. 그 외 상태(이미 CANCELLED)에서
+     * 호출되면 {@link InvalidStatusTransitionException}을 throw한다.
+     *
+     * 시간 기반 정책(취소 가능 기간, 강의 시작 전 여부)은 호출 전 서비스 레이어에서
+     * 검증되어야 한다 — 본 메서드는 인자로 받은 timestamp를 그대로 set하고
+     * 상태 전이 가드만 수행한다.
+     *
+     * 트랜잭션 컨텍스트 안에서만 호출되며 dirty checking으로 UPDATE가 flush된다.
+     * {@code confirmedAt}은 건드리지 않아 CONFIRMED 이력이 보존된다.
+     */
+    public void cancel(OffsetDateTime cancelledAt) {
+        if (this.status != EnrollmentStatus.PENDING && this.status != EnrollmentStatus.CONFIRMED) {
+            throw new InvalidStatusTransitionException(this.id, this.status, EnrollmentStatus.CANCELLED);
+        }
+        this.status = EnrollmentStatus.CANCELLED;
+        this.cancelledAt = cancelledAt;
+    }
+
     @Override
     public boolean equals(Object o) {
         if (this == o) return true;
