@@ -109,10 +109,14 @@ public class EnrollmentService {
      * 강의 row는 비관적 락으로 잠근 인스턴스에 대해서만 {@code decrementCurrentCount()}와
      * {@code getStartDate()} 비교를 수행한다 — concurrent cancel·enroll-cancel race 차단.
      * enrollment의 LAZY proxy {@code getCourseClass()}는 락이 보장되지 않으므로 사용하지 않는다.
+     *
+     * enrollment row도 비관적 락으로 잡는다. 같은 enrollment에 대한 동시 cancel이
+     * stale 상태 검증을 통과해 정원이 이중 감소되는 것을 막는다. 락 순서는 enrollment → class
+     * 고정이며, enroll은 기존 enrollment row를 잠그지 않으므로 deadlock 위험이 없다.
      */
     @Transactional
     public Enrollment cancel(long enrollmentId, long requesterId) {
-        Enrollment enrollment = enrollmentRepository.findById(enrollmentId)
+        Enrollment enrollment = enrollmentRepository.findByIdForUpdate(enrollmentId)
                 .orElseThrow(() -> new NotFoundException("enrollment", enrollmentId));
 
         assertOwner(enrollment, requesterId);
