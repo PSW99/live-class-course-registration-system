@@ -12,7 +12,9 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.Objects;
+import com.liveclass.registration.global.exception.InvalidStatusTransitionException;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -61,6 +63,20 @@ public class Enrollment {
         this.user = user;
         this.courseClass = courseClass;
         this.status = EnrollmentStatus.PENDING;
+    }
+
+    /**
+     * PENDING에서만 CONFIRMED로 전이한다. 그 외 상태에서 호출되면
+     * {@link InvalidStatusTransitionException}을 throw한다.
+     *
+     * 트랜잭션 컨텍스트 안에서만 호출되며 dirty checking으로 UPDATE가 flush된다.
+     */
+    public void confirm() {
+        if (this.status != EnrollmentStatus.PENDING) {
+            throw new InvalidStatusTransitionException(this.id, this.status, EnrollmentStatus.CONFIRMED);
+        }
+        this.status = EnrollmentStatus.CONFIRMED;
+        this.confirmedAt = OffsetDateTime.now(ZoneOffset.UTC);
     }
 
     @Override
