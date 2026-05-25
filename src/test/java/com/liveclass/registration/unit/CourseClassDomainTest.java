@@ -120,6 +120,47 @@ class CourseClassDomainTest {
         assertThat(courseClass.getStatus()).isEqualTo(ClassStatus.CLOSED);
     }
 
+    @Nested
+    @DisplayName("decrementCurrentCount() 호출 시")
+    class DecrementCurrentCount {
+
+        @Test
+        @DisplayName("currentCount가 1인 상태에서 호출하면 0으로 감소한다")
+        void decrement_fromOne_succeeds() {
+            CourseClass courseClass = newDraftClass();
+            courseClass.incrementCurrentCount();
+            assertThat(courseClass.getCurrentCount()).isEqualTo(1);
+
+            courseClass.decrementCurrentCount();
+
+            assertThat(courseClass.getCurrentCount()).isZero();
+        }
+
+        @Test
+        @DisplayName("currentCount가 2인 상태에서 호출하면 1로 감소한다")
+        void decrement_fromTwo_succeeds() {
+            CourseClass courseClass = newDraftClass();
+            courseClass.incrementCurrentCount();
+            courseClass.incrementCurrentCount();
+
+            courseClass.decrementCurrentCount();
+
+            assertThat(courseClass.getCurrentCount()).isEqualTo(1);
+        }
+
+        @Test
+        @DisplayName("currentCount가 0인 상태에서 호출하면 IllegalStateException을 던진다")
+        void decrement_fromZero_throws() {
+            CourseClass courseClass = newDraftClass();
+            assertThat(courseClass.getCurrentCount()).isZero();
+
+            assertThatThrownBy(courseClass::decrementCurrentCount)
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("current_count");
+            assertThat(courseClass.getCurrentCount()).isZero();
+        }
+    }
+
     private static CourseClass newDraftClass() {
         return new CourseClass(
                 new User("Creator", "creator@example.com"),

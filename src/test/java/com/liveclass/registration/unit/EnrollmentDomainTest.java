@@ -80,13 +80,75 @@ class EnrollmentDomainTest {
         }
     }
 
+    @Nested
+    @DisplayName("cancel(OffsetDateTime) 호출 시")
+    class Cancel {
+
+        private static final OffsetDateTime NOW =
+                OffsetDateTime.parse("2026-05-25T10:15:30Z");
+
+        @Test
+        @DisplayName("PENDING 상태에서 호출하면 CANCELLED로 전이되고 cancelledAt이 정확히 설정된다")
+        void cancel_fromPending_succeeds() {
+            Enrollment enrollment = newPendingEnrollment();
+
+            enrollment.cancel(NOW);
+
+            assertThat(enrollment.getStatus()).isEqualTo(EnrollmentStatus.CANCELLED);
+            assertThat(enrollment.getCancelledAt()).isEqualTo(NOW);
+            assertThat(enrollment.getConfirmedAt()).isNull();
+        }
+
+        @Test
+        @DisplayName("CONFIRMED 상태에서 호출하면 CANCELLED로 전이되고 confirmedAt은 보존된다")
+        void cancel_fromConfirmed_succeeds() {
+            Enrollment enrollment = newPendingEnrollment();
+            enrollment.confirm();
+            OffsetDateTime confirmedAtBefore = enrollment.getConfirmedAt();
+
+            enrollment.cancel(NOW);
+
+            assertThat(enrollment.getStatus()).isEqualTo(EnrollmentStatus.CANCELLED);
+            assertThat(enrollment.getCancelledAt()).isEqualTo(NOW);
+            assertThat(enrollment.getConfirmedAt()).isEqualTo(confirmedAtBefore);
+        }
+
+        @Test
+        @DisplayName("이미 CANCELLED 상태에서 재호출하면 InvalidStatusTransitionException을 던진다")
+        void cancel_fromCancelled_throws() {
+            Enrollment enrollment = newPendingEnrollment();
+            enrollment.cancel(NOW);
+
+            assertThatThrownBy(() -> enrollment.cancel(NOW.plusSeconds(1)))
+                    .isInstanceOf(InvalidStatusTransitionException.class)
+                    .hasMessageContaining("enrollment")
+                    .hasMessageContaining("CANCELLED");
+            assertThat(enrollment.getStatus()).isEqualTo(EnrollmentStatus.CANCELLED);
+            assertThat(enrollment.getCancelledAt()).isEqualTo(NOW);
+        }
+
+        @Test
+        @DisplayName("CANCELLED 재호출 예외의 code와 httpStatus는 INVALID_STATUS_TRANSITION / 400이다")
+        void cancel_fromCancelled_throws_codeAndStatus() {
+            Enrollment enrollment = newPendingEnrollment();
+            enrollment.cancel(NOW);
+
+            assertThatThrownBy(() -> enrollment.cancel(NOW.plusSeconds(1)))
+                    .isInstanceOfSatisfying(InvalidStatusTransitionException.class, ex -> {
+                        assertThat(ex.getCode()).isEqualTo("INVALID_STATUS_TRANSITION");
+                        assertThat(ex.getHttpStatus()).isEqualTo(400);
+                    });
+        }
+    }
+
     @Test
-    @DisplayName("새로 생성된 Enrollment는 PENDING 상태이고 confirmedAt은 null이다")
+    @DisplayName("새로 생성된 Enrollment는 PENDING 상태이고 confirmedAt·cancelledAt은 null이다")
     void newEnrollment_initialState() {
         Enrollment enrollment = newPendingEnrollment();
 
         assertThat(enrollment.getStatus()).isEqualTo(EnrollmentStatus.PENDING);
         assertThat(enrollment.getConfirmedAt()).isNull();
+        assertThat(enrollment.getCancelledAt()).isNull();
     }
 
     private static Enrollment newPendingEnrollment() {
