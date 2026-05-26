@@ -1,5 +1,8 @@
-# 전체 스택: docker compose up --build
-# 인프라만:  docker compose up -d postgres redis
+# 평상시:        docker compose up --build         (postgres + redis + app)
+# 인프라만:      docker compose up -d postgres redis
+# 부하 테스트:   docker compose --profile load-test up -d --build
+#                → postgres + redis + toxiproxy + app-load + k6 (k6는 run --rm으로 일회성 실행)
+#                평상시 app(8080)을 먼저 down한 뒤 부하 모드를 띄울 것 (8080 충돌 방지)
 
 services:
   postgres:
@@ -39,6 +42,53 @@ services:
       SPRING_PROFILES_ACTIVE: docker
     ports:
       - "8080:8080"
+
+  # ─────────── 부하 테스트 전용 (profile: load-test) ───────────
+  # toxiproxy: DB proxy. config.json 정적 마운트로 부팅 시 'pg' proxy 자동 등록.
+  toxiproxy:
+    image: ghcr.io/shopify/toxiproxy:2.9.0
+    profiles: ["load-test"]
+    command: ["-host=0.0.0.0", "-config=/config/proxies.json"]
+    volumes:
+      - ./load-test/toxiproxy/config.json:/config/proxies.json:ro
+    ports:
+      - "8474:8474"   # admin API
+      - "5433:5433"   # DB proxy listen
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # 부하 테스트용 앱 — 기존 app과 동일 이미지·소스, datasource URL만 toxiproxy 경유.
+  # 평상시 app과 동시 기동 X (호스트 8080 포트 충돌). 부하 테스트 전 평상시 app을 down 시킬 것.
+  app-load:
+    build: .
+    profiles: ["load-test"]
+    depends_on:
+      toxiproxy:
+        condition: service_started
+      redis:
+        condition: service_healthy
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      # toxiproxy의 'pg' proxy listen 포트(5433)로 우회 — toxic 주입 시 DB latency 강제 표면화
+      SPRING_DATASOURCE_URL: jdbc:postgresql://toxiproxy:5433/course_registration
+    ports:
+      - "8080:8080"
+
+  # k6: docker compose --profile load-test run --rm k6 run /scripts/sN.js 형태로 일회성 실행.
+  k6:
+    image: grafana/k6:0.54.0
+    profiles: ["load-test"]
+    depends_on:
+      app-load:
+        condition: service_started
+    volumes:
+      - ./load-test/scenarios:/scripts:ro
+      - ./load-test/results:/results
+    environment:
+      BASE_URL: http://app-load:8080
+      TOXIPROXY_URL: http://toxiproxy:8474
+    entrypoint: ["k6"]
 
 volumes:
   postgres-data:
