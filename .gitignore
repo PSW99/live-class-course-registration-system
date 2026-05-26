@@ -40,3 +40,7 @@ _workspace_*/
 
 # 문서 — 커밋하지 않음 (사용자가 직접 wiki에 업로드)
 docs/
+
+# 부하 테스트 raw 결과 — 머신 의존·재실행마다 변경되므로 추적 안 함
+load-test/results/*
+!load-test/results/.gitkeep
