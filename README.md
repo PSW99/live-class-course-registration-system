@@ -231,6 +231,7 @@ ERD 상세는 [ERD — 도메인 모델 상세](https://github.com/PSW99/live-cl
 | 활성 (user, class) 중복 신청 금지 (`DUPLICATE_ENROLLMENT`) | "한 사용자가 같은 강의에 두 번 활성 신청"이 의도 외라 봄 |
 | CONFIRMED 취소 시 강의 시작일 도래 거부 (`CLASS_ALREADY_STARTED`) | 명세는 "결제 후 7일"만, 시작한 강의 취소는 비합리적이라 보강 |
 | 정원 차고 CLOSED된 강의의 자동 재오픈 안 함 | 명세 미정. 보수적으로 creator가 수동 재오픈 가정 |
+| PENDING enrollment 10분 자동 만료 (스케줄러) | 결제 미확정이 정원을 무한 점유하는 무결성 구멍 차단. 만료 시 첫 대기자 자동 승격 |
 
 이 룰들은 평가자 검토에 따라 제거 가능 (별도 이슈로 롤백).
 
@@ -315,13 +316,13 @@ k6 + Toxiproxy로 HTTP 레벨 부하 측정:
 
 ## 테스트 실행 방법
 
-총 **153 PASSED** · 0 failures · 0 errors.
+총 **163 PASSED** · 0 failures · 0 errors.
 
 | 분류 | 디렉토리 | 카운트 | 도구 |
 |---|---|---|---|
 | 단위 테스트 | `src/test/.../unit/` | 25 | JUnit 5 + AssertJ (no Spring) |
-| 통합 테스트 | `src/test/.../integration/` | 119 | Spring Boot + Testcontainers (PG 16) |
-| 동시성 테스트 | `src/test/.../concurrency/` | 9 | Testcontainers (PG + Redis) + ExecutorService + CountDownLatch |
+| 통합 테스트 | `src/test/.../integration/` | 126 | Spring Boot + Testcontainers (PG 16) |
+| 동시성 테스트 | `src/test/.../concurrency/` | 12 | Testcontainers (PG + Redis) + ExecutorService + CountDownLatch |
 | 부하 테스트 | `load-test/scenarios/` | 3 시나리오 | k6 + Toxiproxy (수동 실행) |
 
 ### JVM 테스트
@@ -352,8 +353,8 @@ docker compose exec -T postgres psql -U course -d course_registration < load-tes
 | 항목 | 우선순위 | 비고 |
 |---|---|---|
 | 강의별 수강생 목록 (creator 전용) | 보통 | 별도 권한 모델 필요 |
-| PENDING 10분 자동 만료 스케줄러 | 자체 항목 (명세 외) | 도메인 보강 차원, 명세엔 없음 |
 | 대기 승격 실패 가시화 | 관찰성 부채 | 승격 중 unique violation이 cancel을 500으로 롤백. 승격을 별도 트랜잭션·재시도 워커로 분리 + 메트릭 노출 (별도 이슈로 분리) |
+| 분산 스케줄러 (다중 인스턴스) | 운영 부채 | 본 시스템은 단일 인스턴스 가정. row 락 + status 재확인으로 중복 만료는 안전하나, Quartz cluster·Redis lock 기반 분산 트리거는 별도 작업 |
 
 ---
 
