@@ -62,7 +62,7 @@ docker compose exec -T postgres psql -U course -d course_registration < load-tes
 
 모든 사용자 식별은 `X-User-Id: <long>` 헤더로. 응답 본문은 JSON.
 
-### 엔드포인트 (총 11개)
+### 엔드포인트 (총 12개)
 
 | 메서드 | 경로 | 인증 | 설명 |
 |---|---|---|---|
@@ -74,6 +74,7 @@ docker compose exec -T postgres psql -U course -d course_registration < load-tes
 | POST | `/api/enrollments/{id}/confirm` | `X-User-Id` (owner) | 결제 확정 |
 | POST | `/api/enrollments/{id}/cancel` | `X-User-Id` (owner) | 수강 취소 (7일 + 시작 전 가드, 자동 대기 승격) |
 | GET | `/api/enrollments/me` | `X-User-Id` | 내 신청 목록 (최신순) |
+| GET | `/api/classes/{classId}/enrollments` | `X-User-Id` (creator) | 강의별 수강생 목록 (status 필터, 페이지네이션) |
 | POST | `/api/classes/{classId}/waitlist` | `X-User-Id` | 대기열 등록 (정원 가득 시) |
 | DELETE | `/api/classes/{classId}/waitlist/me` | `X-User-Id` | 본인 대기 이탈 |
 | GET | `/api/classes/{classId}/waitlist/me` | `X-User-Id` | 본인 대기 순번 조회 |
@@ -316,12 +317,12 @@ k6 + Toxiproxy로 HTTP 레벨 부하 측정:
 
 ## 테스트 실행 방법
 
-총 **163 PASSED** · 0 failures · 0 errors.
+총 **181 PASSED** · 0 failures · 0 errors.
 
 | 분류 | 디렉토리 | 카운트 | 도구 |
 |---|---|---|---|
-| 단위 테스트 | `src/test/.../unit/` | 25 | JUnit 5 + AssertJ (no Spring) |
-| 통합 테스트 | `src/test/.../integration/` | 126 | Spring Boot + Testcontainers (PG 16) |
+| 단위 테스트 | `src/test/.../unit/` | 31 | JUnit 5 + AssertJ (no Spring) |
+| 통합 테스트 | `src/test/.../integration/` | 138 | Spring Boot + Testcontainers (PG 16) |
 | 동시성 테스트 | `src/test/.../concurrency/` | 12 | Testcontainers (PG + Redis) + ExecutorService + CountDownLatch |
 | 부하 테스트 | `load-test/scenarios/` | 3 시나리오 | k6 + Toxiproxy (수동 실행) |
 
@@ -346,17 +347,6 @@ docker compose exec -T postgres psql -U course -d course_registration < load-tes
 
 ---
 
-## 미구현 / 제약사항
-
-### 선택 구현 중 미구현
-
-| 항목 | 우선순위 | 비고 |
-|---|---|---|
-| 강의별 수강생 목록 (creator 전용) | 보통 | 별도 권한 모델 필요 |
-| 대기 승격 실패 가시화 | 관찰성 부채 | 승격 중 unique violation이 cancel을 500으로 롤백. 승격을 별도 트랜잭션·재시도 워커로 분리 + 메트릭 노출 (별도 이슈로 분리) |
-| 분산 스케줄러 (다중 인스턴스) | 운영 부채 | 본 시스템은 단일 인스턴스 가정. row 락 + status 재확인으로 중복 만료는 안전하나, Quartz cluster·Redis lock 기반 분산 트리거는 별도 작업 |
-
----
 
 ## AI 활용 범위
 
