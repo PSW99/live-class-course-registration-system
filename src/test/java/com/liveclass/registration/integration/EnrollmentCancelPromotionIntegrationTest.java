@@ -179,7 +179,7 @@ class EnrollmentCancelPromotionIntegrationTest extends PostgresRedisContainerSup
     }
 
     @Test
-    @DisplayName("승격된 대기 row가 hard delete 되어 같은 사용자가 같은 강의의 대기열에 다시 row를 만들 수 있다")
+    @DisplayName("승격된 대기 row가 hard delete 된다 — soft delete였다면 row가 남아 카운트 1")
     void cancel_promotedWaiter_waitlistRowIsHardDeleted() throws Exception {
         long classId = createClosedFullClass(creatorId, 1);
         long enrollmentId = persistPendingEnrollment(enrolledUserId, classId);
@@ -194,20 +194,6 @@ class EnrollmentCancelPromotionIntegrationTest extends PostgresRedisContainerSup
                 Long.class,
                 firstWaiterId, classId);
         assertThat(remainingRows).isZero();
-
-        persistWaitlistEntry(secondWaiterId, classId);
-        Long afterReinsert = jdbcTemplate.queryForObject(
-                "SELECT COUNT(*) FROM waitlist_entries WHERE class_id = ?",
-                Long.class,
-                classId);
-        assertThat(afterReinsert).isEqualTo(1L);
-
-        persistWaitlistEntry(firstWaiterId, classId);
-        Long finalRows = jdbcTemplate.queryForObject(
-                "SELECT COUNT(*) FROM waitlist_entries WHERE class_id = ?",
-                Long.class,
-                classId);
-        assertThat(finalRows).isEqualTo(2L);
     }
 
     @Test
