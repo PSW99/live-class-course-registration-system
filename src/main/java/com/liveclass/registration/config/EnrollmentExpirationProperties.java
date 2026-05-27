@@ -10,4 +10,12 @@ public record EnrollmentExpirationProperties(
         int batchSize,
         boolean schedulerEnabled
 ) {
+    public EnrollmentExpirationProperties {
+        if (ttl == null || ttl.isZero() || ttl.isNegative()) {
+            throw new IllegalArgumentException("ttl must be positive: " + ttl);
+        }
+        if (batchSize <= 0) {
+            throw new IllegalArgumentException("batchSize must be positive: " + batchSize);
+        }
+    }
 }
