@@ -3,6 +3,8 @@ package com.liveclass.registration.repository;
 import com.liveclass.registration.domain.Enrollment;
 import jakarta.persistence.LockModeType;
 import jakarta.persistence.QueryHint;
+import java.time.OffsetDateTime;
+import java.util.List;
 import java.util.Optional;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -47,4 +49,13 @@ public interface EnrollmentRepository extends JpaRepository<Enrollment, Long> {
                and e.status <> com.liveclass.registration.domain.EnrollmentStatus.CANCELLED
             """)
     boolean existsActiveByUserIdAndClassId(@Param("userId") Long userId, @Param("classId") Long classId);
+
+    /** TTL 경과 PENDING 후보 ID. 락 없이 후보만 수집 — 본 만료는 per-row REQUIRES_NEW에서 처리. */
+    @Query("""
+            select e.id from Enrollment e
+             where e.status = com.liveclass.registration.domain.EnrollmentStatus.PENDING
+               and e.createdAt <= :threshold
+             order by e.createdAt asc, e.id asc
+            """)
+    List<Long> findExpiredPendingIds(@Param("threshold") OffsetDateTime threshold, Pageable pageable);
 }
