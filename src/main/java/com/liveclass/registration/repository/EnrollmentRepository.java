@@ -32,4 +32,19 @@ public interface EnrollmentRepository extends JpaRepository<Enrollment, Long> {
      * 필터·정렬을 단일 index scan으로 처리한다.
      */
     Page<Enrollment> findByUserIdOrderByCreatedAtDesc(long userId, Pageable pageable);
+
+    /**
+     * 같은 사용자의 같은 강의에 활성(PENDING/CONFIRMED) enrollment가 존재하는지 확인.
+     *
+     * 대기 등록 시 cross-table 정합성 1차 필터로 사용된다. 본 검증은 friendly 에러용이며
+     * 최종 보증은 partial unique index {@code uk_active_enrollment}가 담당한다.
+     */
+    @Query("""
+            select case when count(e) > 0 then true else false end
+              from Enrollment e
+             where e.user.id = :userId
+               and e.courseClass.id = :classId
+               and e.status <> com.liveclass.registration.domain.EnrollmentStatus.CANCELLED
+            """)
+    boolean existsActiveByUserIdAndClassId(@Param("userId") Long userId, @Param("classId") Long classId);
 }
