@@ -169,6 +169,29 @@ public class EnrollmentService {
         return enrollmentRepository.findByUserIdOrderByCreatedAtDesc(userId, pageable);
     }
 
+    /**
+     * 강의별 수강생 목록. creator 전용 운영 시각이라 신청자 user 정보를 함께 fetch한다.
+     *
+     * 검증 순서 404 → 403:
+     *   1. 강의 존재
+     *   2. 요청자가 강의 creator
+     *
+     * statusFilter가 {@code null}이면 모든 status 포함. CANCELLED row도 기본 포함 — 이력 추적.
+     */
+    @Transactional(readOnly = true)
+    public Page<Enrollment> listByClass(long classId, long requesterId,
+                                        EnrollmentStatus statusFilter, Pageable pageable) {
+        CourseClass cls = courseClassRepository.findById(classId)
+                .orElseThrow(() -> new NotFoundException("class", classId));
+        if (!cls.getCreator().getId().equals(requesterId)) {
+            throw new ForbiddenAccessException("class", classId, requesterId);
+        }
+        return statusFilter == null
+                ? enrollmentRepository.findByCourseClassIdOrderByCreatedAtDesc(classId, pageable)
+                : enrollmentRepository.findByCourseClassIdAndStatusOrderByCreatedAtDesc(
+                        classId, statusFilter, pageable);
+    }
+
     private void assertOwner(Enrollment enrollment, long requesterId) {
         if (!enrollment.getUser().getId().equals(requesterId)) {
             throw new ForbiddenAccessException("enrollment", enrollment.getId(), requesterId);
