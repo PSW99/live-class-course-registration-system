@@ -44,3 +44,10 @@ management:
 logging:
   level:
     com.liveclass: DEBUG
+
+course-registration:
+  enrollment:
+    expiration:
+      ttl: PT10M
+      batch-size: 500
+      scheduler-enabled: true
