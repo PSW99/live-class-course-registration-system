@@ -1,6 +1,7 @@
 package com.liveclass.registration.repository;
 
 import com.liveclass.registration.domain.Enrollment;
+import com.liveclass.registration.domain.EnrollmentStatus;
 import jakarta.persistence.LockModeType;
 import jakarta.persistence.QueryHint;
 import java.time.OffsetDateTime;
@@ -8,6 +9,7 @@ import java.util.List;
 import java.util.Optional;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
@@ -58,4 +60,15 @@ public interface EnrollmentRepository extends JpaRepository<Enrollment, Long> {
              order by e.createdAt asc, e.id asc
             """)
     List<Long> findExpiredPendingIds(@Param("threshold") OffsetDateTime threshold, Pageable pageable);
+
+    /**
+     * 강의별 수강생 목록 — 모든 status 포함. EntityGraph로 user를 fetch해 DTO 변환 시 N+1 회피.
+     */
+    @EntityGraph(attributePaths = "user")
+    Page<Enrollment> findByCourseClassIdOrderByCreatedAtDesc(Long classId, Pageable pageable);
+
+    /** 강의별 수강생 목록 — 특정 status 필터. */
+    @EntityGraph(attributePaths = "user")
+    Page<Enrollment> findByCourseClassIdAndStatusOrderByCreatedAtDesc(
+            Long classId, EnrollmentStatus status, Pageable pageable);
 }
