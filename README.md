@@ -62,7 +62,7 @@ docker compose exec -T postgres psql -U course -d course_registration < load-tes
 
 모든 사용자 식별은 `X-User-Id: <long>` 헤더로. 응답 본문은 JSON.
 
-### 엔드포인트 (총 8개)
+### 엔드포인트 (총 11개)
 
 | 메서드 | 경로 | 인증 | 설명 |
 |---|---|---|---|
@@ -72,8 +72,11 @@ docker compose exec -T postgres psql -U course -d course_registration < load-tes
 | GET | `/api/classes/{id}` | 불필요 | 강의 상세 (`currentCount` 포함) |
 | POST | `/api/enrollments` | `X-User-Id` | 수강 신청 (PENDING 생성) |
 | POST | `/api/enrollments/{id}/confirm` | `X-User-Id` (owner) | 결제 확정 |
-| POST | `/api/enrollments/{id}/cancel` | `X-User-Id` (owner) | 수강 취소 (7일 + 시작 전 가드) |
+| POST | `/api/enrollments/{id}/cancel` | `X-User-Id` (owner) | 수강 취소 (7일 + 시작 전 가드, 자동 대기 승격) |
 | GET | `/api/enrollments/me` | `X-User-Id` | 내 신청 목록 (최신순) |
+| POST | `/api/classes/{classId}/waitlist` | `X-User-Id` | 대기열 등록 (정원 가득 시) |
+| DELETE | `/api/classes/{classId}/waitlist/me` | `X-User-Id` | 본인 대기 이탈 |
+| GET | `/api/classes/{classId}/waitlist/me` | `X-User-Id` | 본인 대기 순번 조회 |
 
 ### 요청·응답 예시
 
@@ -139,8 +142,10 @@ curl "http://localhost:8080/api/enrollments/me?page=0&size=20" \
 
 | HTTP | code | 설명 |
 |---|---|---|
-| 400 | `CLASS_NOT_OPEN` | OPEN 아닌 강의에 신청 |
+| 400 | `CLASS_NOT_OPEN` | OPEN 아닌 강의에 신청·대기 |
 | 400 | `SELF_ENROLLMENT_FORBIDDEN` | 본인 강의에 본인 신청 |
+| 400 | `SELF_WAITLIST_FORBIDDEN` | 본인 강의에 본인 대기 등록 |
+| 400 | `CAPACITY_AVAILABLE` | 정원이 남아있어 대기 불가 (수강 신청 경로로 유도) |
 | 400 | `INVALID_STATUS_TRANSITION` | 허용되지 않은 상태 전이 |
 | 400 | `CANCEL_PERIOD_EXPIRED` | CONFIRMED 결제 후 7일 초과 |
 | 400 | `CLASS_ALREADY_STARTED` | 강의 시작일 도래 후 취소 시도 |
@@ -151,6 +156,8 @@ curl "http://localhost:8080/api/enrollments/me?page=0&size=20" \
 | 404 | `NOT_FOUND` | 리소스 없음 |
 | 409 | `CAPACITY_EXCEEDED` | 정원 마감 후 신청 |
 | 409 | `DUPLICATE_ENROLLMENT` | 활성 중복 신청 |
+| 409 | `ACTIVE_ENROLLMENT_EXISTS` | 활성 enrollment 존재 시 대기 등록 시도 |
+| 409 | `DUPLICATE_WAITLIST` | 동일 강의에 중복 대기 등록 |
 | 503 | `LOCK_ACQUISITION_FAILED` | 분산락 3초 timeout (의도된 거부) |
 
 검증 순서 일관: **404 → 403 → 400** (존재 → 권한 → 입력).
@@ -281,17 +288,40 @@ k6 + Toxiproxy로 HTTP 레벨 부하 측정:
 
 상세 환경·재현 절차는 [부하 테스트 결과](https://github.com/PSW99/live-class-course-registration-system/wiki/%EB%B6%80%ED%95%98-%ED%85%8C%EC%8A%A4%ED%8A%B8-%EA%B2%B0%EA%B3%BC) 참조.
 
+### 대기열을 DB 테이블로 둔 선택 — 트레이드오프
+
+수강신청은 본질적으로 **spike 트래픽 도메인**이라 처리량이 매우 중요합니다. 그럼에도 대기열을 Redis List/ZSet나 메시지 큐가 아닌 **PostgreSQL 테이블**(`waitlist_entries`)로 구현한 이유와 한계를 명시합니다.
+
+**왜 DB 큐를 골랐는가**
+
+| 이유 | 설명 |
+|---|---|
+| 정원·승격이 결국 DB 트랜잭션 | 자리가 비는 순간 첫 대기자를 PENDING으로 승격하는 흐름은 `current_count` 차감·`enrollments` INSERT가 필수. 큐만 Redis로 빼도 승격 경로가 DB로 돌아와 처리량 이득이 상쇄 |
+| 같은 락 재사용 → 자리 빔 윈도우 0 | cancel이 이미 잡고 있는 class row 락을 promote가 같은 트랜잭션에서 재사용. 외부 관찰자는 "자리 비어있는데 승격 안 됨" 상태를 절대 못 봄 |
+| 정합성 증명이 평가 가능 | 본 과제의 평가 포인트가 "100명 동시 신청에 정확히 1명 성공"의 증명. DB 트랜잭션 + UNIQUE 인덱스 조합이 코드와 테스트로 직관적으로 드러남 |
+| 강의 단위 contention은 DB로 충분 | spike가 시스템 전체가 아닌 **인기 강의 몇 개**에 집중. 강의 1개당 락 경쟁은 Redisson 게이트(L1)가 1차 흡수 |
+
+**언제 이 선택이 깨지는가**
+
+| 한계 | 대응 |
+|---|---|
+| 전국 단위 통합 수강신청처럼 RPS가 강의 단위가 아닌 시스템 단위로 폭주 | **신청 접수까지만 동기** 처리하고, 정원 차감·승격을 Kafka/Redis Stream + 워커로 비동기 분리 (이벤트 소싱·CQRS 방향) |
+| 사용자에게 "내 순번이 1로 떨어졌습니다" 푸시 알림이 필요 | 폴링 대신 SSE/WebSocket + 승격 시 이벤트 발행 |
+| 승격 중 unique violation이 cancel까지 롤백시켜 500 발생 | 승격을 별도 트랜잭션·재시도 워커로 분리하고 실패는 메트릭으로 노출 (관찰성 부채로 분리) |
+
+**한 줄 요약:** 본 과제 범위(단일 인스턴스·강의 단위 contention)에서는 DB 락이 처리량 병목이 아니고 정합성 증명이 단순 명확해 DB 큐를 선택했습니다. 진짜 대규모 spike에서는 **비동기 큐 + 워커 아키텍처**가 정답이며, 그 경우 본 코드의 `EnrollmentService.cancel()` 안 동기 승격은 이벤트 발행으로 교체됩니다.
+
 ---
 
 ## 테스트 실행 방법
 
-총 **117 PASSED** · 0 failures · 0 errors.
+총 **153 PASSED** · 0 failures · 0 errors.
 
 | 분류 | 디렉토리 | 카운트 | 도구 |
 |---|---|---|---|
-| 단위 테스트 | `src/test/.../unit/` | 17 | JUnit 5 + AssertJ (no Spring) |
-| 통합 테스트 | `src/test/.../integration/` | 96 | Spring Boot + Testcontainers (PG 16) |
-| 동시성 테스트 | `src/test/.../concurrency/` | 4 | Testcontainers (PG + Redis) + ExecutorService + CountDownLatch |
+| 단위 테스트 | `src/test/.../unit/` | 25 | JUnit 5 + AssertJ (no Spring) |
+| 통합 테스트 | `src/test/.../integration/` | 119 | Spring Boot + Testcontainers (PG 16) |
+| 동시성 테스트 | `src/test/.../concurrency/` | 9 | Testcontainers (PG + Redis) + ExecutorService + CountDownLatch |
 | 부하 테스트 | `load-test/scenarios/` | 3 시나리오 | k6 + Toxiproxy (수동 실행) |
 
 ### JVM 테스트
@@ -321,9 +351,9 @@ docker compose exec -T postgres psql -U course -d course_registration < load-tes
 
 | 항목 | 우선순위 | 비고 |
 |---|---|---|
-| 대기열 (waitlist) | 낮음 | 명세상 "시간 여유 시" 항목 |
 | 강의별 수강생 목록 (creator 전용) | 보통 | 별도 권한 모델 필요 |
 | PENDING 10분 자동 만료 스케줄러 | 자체 항목 (명세 외) | 도메인 보강 차원, 명세엔 없음 |
+| 대기 승격 실패 가시화 | 관찰성 부채 | 승격 중 unique violation이 cancel을 500으로 롤백. 승격을 별도 트랜잭션·재시도 워커로 분리 + 메트릭 노출 (별도 이슈로 분리) |
 
 ---
 

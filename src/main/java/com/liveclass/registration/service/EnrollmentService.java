@@ -5,6 +5,7 @@ import com.liveclass.registration.domain.CourseClass;
 import com.liveclass.registration.domain.Enrollment;
 import com.liveclass.registration.domain.EnrollmentStatus;
 import com.liveclass.registration.domain.User;
+import com.liveclass.registration.domain.WaitlistEntry;
 import com.liveclass.registration.global.exception.CancelPeriodExpiredException;
 import com.liveclass.registration.global.exception.ClassAlreadyStartedException;
 import com.liveclass.registration.global.exception.ClassNotOpenException;
@@ -16,12 +17,15 @@ import com.liveclass.registration.global.exception.SelfEnrollmentForbiddenExcept
 import com.liveclass.registration.repository.CourseClassRepository;
 import com.liveclass.registration.repository.EnrollmentRepository;
 import com.liveclass.registration.repository.UserRepository;
+import com.liveclass.registration.repository.WaitlistRepository;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
+import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -39,6 +43,7 @@ public class EnrollmentService {
     private final CourseClassRepository courseClassRepository;
     private final EnrollmentRepository enrollmentRepository;
     private final UserRepository userRepository;
+    private final WaitlistRepository waitlistRepository;
     private final Clock clock;
 
     /**
@@ -149,7 +154,53 @@ public class EnrollmentService {
 
         enrollment.cancel(now);
         cls.decrementCurrentCount();
+
+        // 자리가 비는 즉시 첫 대기자를 PENDING으로 승격한다.
+        // 같은 트랜잭션·같은 class 락 안이므로 외부 관찰자에게 자리 빔 윈도우가 노출되지 않는다.
+        promoteFirstWaitlistIfAny(cls);
+
         return enrollment;
+    }
+
+    /**
+     * 대기열 첫 row를 PENDING enrollment로 atomic 승격.
+     *
+     * 호출 전제:
+     *   - 호출자가 이미 class row의 비관적 락을 보유 중이다.
+     *   - 호출자가 직전에 {@code decrementCurrentCount()}를 호출해 자리가 1개 비어 있다.
+     *
+     * 락 순서는 class → waitlist 단방향. waitlist row만 추가로 {@code FOR UPDATE LIMIT 1}로 잠그며
+     * 다른 흐름이 {@code waitlist → class} 순으로 잠그지 않으므로 순환 대기 없음.
+     *
+     * {@code current_count} 변화는 -1(cancel) +1(promote) = 0이므로 BR-06 자동 마감이 trigger되지
+     * 않고, 자동 reopen도 없다. 강의 상태는 그대로 유지된다.
+     */
+    private void promoteFirstWaitlistIfAny(CourseClass cls) {
+        List<WaitlistEntry> first = waitlistRepository.findFirstByClassIdForUpdate(
+                cls.getId(), PageRequest.of(0, 1));
+        if (first.isEmpty()) {
+            return;
+        }
+        WaitlistEntry entry = first.get(0);
+
+        // LAZY proxy의 id만 접근하면 추가 SELECT가 발생하지 않는다. 그러나 Enrollment 생성자가
+        // 실제 User 엔티티를 요구하므로 명시적으로 fetch한다.
+        Long userId = entry.getUser().getId();
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new IllegalStateException(
+                        "waitlist user 정합성 깨짐: waitlistId=" + entry.getId()));
+
+        Enrollment promoted = new Enrollment(user, cls);
+        cls.incrementCurrentCount();
+        try {
+            enrollmentRepository.saveAndFlush(promoted);
+        } catch (DataIntegrityViolationException e) {
+            // ACTIVE_ENROLLMENT_EXISTS 검증이 join 단계에서 막았어야 정상.
+            // 여기까지 도달했다는 것은 시스템 정합성이 깨졌다는 신호 → 500 응답으로 운영 알람.
+            throw new IllegalStateException(
+                    "waitlist 승격 중 활성 enrollment 중복 — user=" + userId + ", class=" + cls.getId(), e);
+        }
+        waitlistRepository.delete(entry);
     }
 
     /**
